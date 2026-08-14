@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Generated artifacts (regenerate with scripts/extract_schema.py)
+profit_schema.json
+
+# Qdrant local storage
+qdrant_storage/
+
+.idea
