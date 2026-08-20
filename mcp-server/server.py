@@ -6,23 +6,28 @@ Tools:
   get_table_schema(table_name)     Return full Markdown doc for a table
   get_sql_recipe(intent)           Find pre-written SQL recipes by intent
 
+Transport: streamable HTTP (not stdio). Start the server, then point Claude
+Code at the printed URL.
+
 Start:
     python mcp-server/server.py
 
-Or via Claude Code settings (claude_desktop_config.json / .claude/settings.json):
+Env vars:
+    MCP_HOST   Bind host (default 127.0.0.1)
+    MCP_PORT   Bind port (default 8000)
+    MCP_PATH   HTTP path for the MCP endpoint (default /mcp)
+
+Register with Claude Code (claude_desktop_config.json / .claude/settings.json):
     {
       "mcpServers": {
         "profit-rag": {
-          "command": "python",
-          "args": ["mcp-server/server.py"],
-          "env": {
-            "QDRANT_URL": "http://localhost:6333",
-            "COLLECTION_NAME": "profit_docs",
-            "DOCS_DIR": "docs/"
-          }
+          "url": "http://127.0.0.1:8000/mcp"
         }
       }
     }
+
+Or via the CLI:
+    claude mcp add --transport http profit-rag http://127.0.0.1:8000/mcp
 """
 
 import os
@@ -53,12 +58,14 @@ COLLECTION = os.environ.get("COLLECTION_NAME", "profit_docs")
 DOCS_DIR = Path(os.environ.get("DOCS_DIR", str(_ROOT / "docs")))
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "jinaai/jina-embeddings-v2-base-es")
 
+MCP_HOST = os.environ.get("MCP_HOST", "127.0.0.1")
+MCP_PORT = int(os.environ.get("MCP_PORT", "8000"))
+MCP_PATH = os.environ.get("MCP_PATH", "/mcp")
+
 try:
-    import mcp.server.stdio
-    from mcp.server import Server
-    from mcp.types import TextContent, Tool, ListToolsRequest, ListToolsResult, CallToolRequestParams, CallToolResult
+    from mcp.server.mcpserver import MCPServer
 except ImportError:
-    sys.exit("mcp not installed. Run: pip install mcp")
+    sys.exit("mcp not installed or too old (need mcp>=2.0 for MCPServer). Run: pip install -U mcp")
 
 try:
     from fastembed import TextEmbedding
@@ -91,12 +98,22 @@ def _get_qdrant() -> "QdrantClient":
     return _qdrant
 
 
-# ── Tool implementations ─────────────────────────────────────────────────────
+# ── MCP server setup ─────────────────────────────────────────────────────────
+
+app = MCPServer("profit-rag")
+
 
 def _embed(text: str) -> list[float]:
     return list(_get_embedder().embed([text]))[0].tolist()
 
 
+@app.tool(
+    description=(
+        "Semantic search over Profit Plus 2k12 documentation (tables, "
+        "stored procedures, triggers, workflows). Use for general questions "
+        "about schema, business logic, or module behavior."
+    )
+)
 def search_profit_docs(query: str, limit: int = 5) -> str:
     """Semantic search over indexed Profit Plus documentation."""
     vector = _embed(query)
@@ -120,6 +137,12 @@ def search_profit_docs(query: str, limit: int = 5) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+@app.tool(
+    description=(
+        "Return the full schema documentation for a specific Profit Plus table, "
+        "including columns, triggers, stored procedures, and SQL recipes."
+    )
+)
 def get_table_schema(table_name: str) -> str:
     """Return the full Markdown documentation for a specific table."""
     # Try exact match first
@@ -135,9 +158,14 @@ def get_table_schema(table_name: str) -> str:
     return search_profit_docs(f"tabla {table_name} schema columns", limit=3)
 
 
+@app.tool(
+    description=(
+        "Find pre-built SQL queries for common Profit Plus reporting tasks: "
+        "retenciones, libros de ventas/compras, cuentas por cobrar, saldos USD, inventario."
+    )
+)
 def get_sql_recipe(intent: str) -> str:
     """Find pre-written SQL recipes matching a business intent."""
-    # Search with SQL-focused query
     query = f"SQL recipe query {intent} recetario"
     vector = _embed(query)
     response = _get_qdrant().query_points(
@@ -159,87 +187,10 @@ def get_sql_recipe(intent: str) -> str:
     return search_profit_docs(intent, limit=4)
 
 
-# ── MCP server setup ─────────────────────────────────────────────────────────
-
-app = Server("profit-rag")
-
-TOOLS = [
-    Tool(
-        name="search_profit_docs",
-        description=(
-            "Semantic search over Profit Plus 2k12 documentation (tables, "
-            "stored procedures, triggers, workflows). Use for general questions "
-            "about schema, business logic, or module behavior."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Natural language search query"},
-                "limit": {"type": "integer", "default": 5, "description": "Number of results"},
-            },
-            "required": ["query"],
-        },
-    ),
-    Tool(
-        name="get_table_schema",
-        description=(
-            "Return the full schema documentation for a specific Profit Plus table, "
-            "including columns, triggers, stored procedures, and SQL recipes."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "table_name": {"type": "string", "description": "Exact table name (e.g. saFacturaVenta)"},
-            },
-            "required": ["table_name"],
-        },
-    ),
-    Tool(
-        name="get_sql_recipe",
-        description=(
-            "Find pre-built SQL queries for common Profit Plus reporting tasks: "
-            "retenciones, libros de ventas/compras, cuentas por cobrar, saldos USD, inventario."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "intent": {"type": "string", "description": "Describe what you want to query (e.g. 'saldo pendiente por cliente en USD')"},
-            },
-            "required": ["intent"],
-        },
-    ),
-]
-
-
-async def list_tools_handler(request: ListToolsRequest) -> ListToolsResult:
-    return ListToolsResult(tools=TOOLS)
-
-
-async def call_tool_handler(params: CallToolRequestParams) -> CallToolResult:
-    try:
-        if params.name == "search_profit_docs":
-            result = search_profit_docs(
-                query=params.arguments["query"],
-                limit=params.arguments.get("limit", 5),
-            )
-        elif params.name == "get_table_schema":
-            result = get_table_schema(params.arguments["table_name"])
-        elif params.name == "get_sql_recipe":
-            result = get_sql_recipe(params.arguments["intent"])
-        else:
-            result = f"Unknown tool: {params.name}"
-    except Exception as e:
-        result = f"Error: {e}"
-
-    return CallToolResult(content=[TextContent(type="text", text=result)])
-
-
-app.add_request_handler("tools/list", ListToolsRequest, list_tools_handler)
-app.add_request_handler("tools/call", CallToolRequestParams, call_tool_handler)
-
-
 if __name__ == "__main__":
-    import asyncio
-    print("Starting server...")
-    mcp.server.stdio.stdio_server(app)
-    print("Server started...")
+    url = f"http://{MCP_HOST}:{MCP_PORT}{MCP_PATH}"
+    print(f"Starting profit-rag MCP server (streamable HTTP)...")
+    print(f"Connect Claude Code with:")
+    print(f"  claude mcp add --transport http profit-rag {url}")
+    print(f"URI: {url}")
+    app.run(transport="streamable-http", host=MCP_HOST, port=MCP_PORT, streamable_http_path=MCP_PATH)
