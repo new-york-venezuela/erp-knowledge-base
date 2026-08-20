@@ -1,31 +1,32 @@
 # Tabla: saTipoAjuste
-**Módulo**: Configuración
-**Descripción de Negocio**: _Pendiente de enriquecimiento_
+**Módulo**: Inventario
+**Descripción de Negocio**: Catálogo de tipos/motivos de ajuste de inventario. Cada tipo se clasifica como Entrada o Salida vía `tipo_trans`. Este catálogo alimenta directamente el selector de "motivo del ajuste" en la UI del módulo de Inventario. (Reclasificado de "Configuración" a "Inventario" — es el catálogo de motivos usado exclusivamente por `saAjusteReng`.)
 
-## Campos
-| Campo | Tipo | Nulo | Descripción | Relación |
+## Campos Clave
+| Campo | Tipo | Nulo | Descripción de Negocio | Relación |
 |---|---|---|---|---|
-| `co_tipo` | char(6) | NOT NULL | b'C\xc3\xb3digo del Tipo Ajuste' | — |
-| `des_tipo` | varchar(60) | NOT NULL | b'Descripci\xc3\xb3n del Tipo de Ajuste' | — |
-| `tipo_trans` | char(1) | NOT NULL | b'Tipo de Ajuste Aplicado' | — |
-| `campo1` | varchar(60) | NULL | b'Campo Adicional' | — |
-| `campo2` | varchar(60) | NULL | b'Campo Adicional' | — |
-| `campo3` | varchar(60) | NULL | b'Campo Adicional' | — |
-| `campo4` | varchar(60) | NULL | b'Campo Adicional' | — |
-| `campo5` | varchar(60) | NULL | b'Campo Adicional' | — |
-| `campo6` | varchar(60) | NULL | b'Campo Adicional' | — |
-| `campo7` | varchar(60) | NULL | b'Campo Adicional' | — |
-| `campo8` | varchar(60) | NULL | b'Campo Adicional' | — |
-| `co_us_in` | char(6) | NOT NULL | b'Codigo del usuario que ingreso el registro' | — |
-| `co_sucu_in` | char(6) | NULL | b'Codigo de la sucursal donde fue ingresado el registro' | — |
-| `fe_us_in` | datetime(23,3) | NOT NULL | b'Fecha de insercion del registro' | — |
-| `co_us_mo` | char(6) | NOT NULL | b'Codigo del usuario que hizo la ultima modificaci\xc3\xb3n en el registro' | — |
-| `co_sucu_mo` | char(6) | NULL | b'Codigo de la sucursal donde fue modificado por ultima vez el registro' | — |
-| `fe_us_mo` | datetime(23,3) | NOT NULL | b'Fecha de la ultima modificacion del registro' | — |
-| `revisado` | char(1) | NULL | b'Reservado por el sistema' | — |
-| `trasnfe` | char(1) | NULL | b'Reservado por el sistema' | — |
-| `validador` | timestamp | NOT NULL | b'Marca de tiempo usada en el control de concurrencia' | — |
-| `rowguid` | uniqueidentifier | NOT NULL | b'Identificador Unico' | — |
+| `co_tipo` | char(6) | NOT NULL | Código del tipo de ajuste (PK) | Clave Primaria |
+| `des_tipo` | varchar(60) | NOT NULL | Descripción del tipo de ajuste | — |
+| `tipo_trans` | char(1) | NOT NULL | **`0` = Entrada (suma stock), `1` = Salida (resta stock)** — verificado contra datos reales | — |
+| `campo1`…`campo8` | varchar(60) | NULL | Campos personalizables adicionales | — |
+| `co_us_in` / `co_sucu_in` / `fe_us_in` | mixto | mixto | Usuario/sucursal/fecha de inserción | — |
+| `co_us_mo` / `co_sucu_mo` / `fe_us_mo` | mixto | mixto | Usuario/sucursal/fecha de última modificación | — |
+| `revisado` / `trasnfe` / `validador` / `rowguid` | mixto | mixto | Campos de sistema estándar | — |
+
+## Datos reales (base `Ncake_a` — catálogo completo, 6 filas, sin cambios desde 2006-2009)
+| Código | Descripción | tipo_trans |
+|---|---|---|
+| `E00001` | Entrada Producción | `0` (Entrada) |
+| `E00002` | Entrada De Producción Por Merma Convertida A Materia Prima | `0` (Entrada) |
+| `S00001` | Salida | `1` (Salida) |
+| `S00002` | Merma De Producción | `1` (Salida) |
+| `S00003` | Merma De Producción A Materia Prima | `1` (Salida) |
+| `S00004` | Salida De Productos Dañados | `1` (Salida) |
+
+**Implicación de diseño**: no hay un tipo genérico "conteo/recuento" — los ajustes de conteo físico se generan aparte vía `saInventarioFisico` → `saAjuste.co_invfisico`. Para el flujo manual de "crear ajuste" del nuevo módulo, el motivo más relevante para el negocio (insumos/materia prima) es probablemente `S00004` (producto dañado) y `S00001`/`S00002` (salida genérica / merma), con `E00001` para entradas de corrección positiva. Este catálogo es editable en Profit Plus (no es un `CHECK` ni un enum fijo en código) — confirmar con el usuario de negocio si necesita agregar un tipo específico (ej. "Ajuste por conteo manual", "Vencimiento") antes de construir el selector, en vez de asumir que estos 6 bastan.
 
 ## Triggers Relacionados
 _Ninguno_
+
+## Foreign Keys entrantes
+- `saAjusteReng.co_tipo` → `saTipoAjuste.co_tipo`

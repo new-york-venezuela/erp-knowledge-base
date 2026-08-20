@@ -1,65 +1,49 @@
 # SP: RepMovimientoInventarioxArticulo
-**Tipo**: Reporte
+**Tipo**: Reporte / Kardex
 **Módulo**: Inventario
+**Descripción de Negocio**: Es el reporte canónico de **kardex de movimientos de inventario por artículo** — la fuente de verdad para "cómo evolucionó el stock de este artículo en el tiempo". Es el candidato ideal como fuente de datos para el gráfico de evolución de inventario y el cálculo de tasa de consumo del módulo nuevo, porque agrega en una sola secuencia ordenada **todos** los tipos de movimiento (compras, ventas, ajustes, traslados, devoluciones), no solo uno. Verificado leyendo el `OBJECT_DEFINITION` completo (3687 caracteres) contra la base `Ncake_a`.
 
-## Tablas Referenciadas
-- [`saArtUnidad`](../tables/saArtUnidad.md)
-- [`saArticulo`](../tables/saArticulo.md)
-
-## Código (excerpt)
+## Firma
 ```sql
--- =============================================
--- Author:		<Softech Sistemas>
--- Create date: <10/09/2010>
--- Description:	<Movimientos de Inventarios por Articulo>
--- =============================================
 CREATE PROCEDURE [dbo].[RepMovimientoInventarioxArticulo]
-    @sCo_Art_d CHAR(30) = NULL ,
-    @sCo_Art_h CHAR(30) = NULL ,
-    @dCo_fecha_d DATETIME = NULL ,
-    @dCo_fecha_h DATETIME = NULL ,
-    @sCo_Almacen CHAR(6) = NULL ,
-    @sCo_Linea_d CHAR(6) = NULL ,
-    @sCo_Linea_h CHAR(6) = NULL ,
-    @sCo_Categoria_d CHAR(6) = NULL ,
-    @sCo_Categoria_h CHAR(6) = NULL ,
-    @sCo_Movimiento CHAR(4) = NULL ,
-    --@sCostos CHAR(4) = NULL ,
-    @sCo_Sucursal CHAR(6) = NULL ,
-    @sCampOrderBy VARCHAR(16) = NULL ,
-    @sDir VARCHAR(6) = NULL ,
+    @sCo_Art_d CHAR(30) = NULL, @sCo_Art_h CHAR(30) = NULL,        -- rango de artículo (código desde/hasta)
+    @dCo_fecha_d DATETIME = NULL, @dCo_fecha_h DATETIME = NULL,    -- rango de fecha
+    @sCo_Almacen CHAR(6) = NULL,                                   -- filtro de almacén (opcional)
+    @sCo_Linea_d CHAR(6) = NULL, @sCo_Linea_h CHAR(6) = NULL,      -- rango de línea de artículo
+    @sCo_Categoria_d CHAR(6) = NULL, @sCo_Categoria_h CHAR(6) = NULL, -- rango de categoría
+    @sCo_Movimiento CHAR(4) = NULL,                                -- filtro por tipo: 'COMP','FACT','AJUS','TRAS', etc. NULL/'TODO' = todos
+    @sCo_Sucursal CHAR(6) = NULL,
+    @sCampOrderBy VARCHAR(16) = NULL, @sDir VARCHAR(6) = NULL,
     @bHeaderRep BIT = 0
-AS 
-    BEGIN
-        SET NOCOUNT ON ;
+```
 
-		 IF ( @sCo_Movimiento IS NULL
-             OR @sCo_Movimiento = 'TODO'
-           ) 
-        SET @sCo_Movimiento = NULL
+## Cómo funciona
+Por cada artículo (`saArticulo`, filtrado por rango de código/línea/categoría), hace `INNER JOIN` con el resultado de la función de tabla **`dbo.MovimientoInventario(...)`** — ver [`MovimientoInventario`](MovimientoInventario.md) — que es donde vive la lógica real de unión de movimientos. Además calcula:
+- `StockInic`: stock inicial al comienzo del rango de fecha, vía `dbo.ConsultarStockActualxAlmacenxFecha(co_art, co_alma, fecha_desde - 1seg, NULL)`. Para artículos tipo `S` (servicio) siempre devuelve 0 — no tienen stock.
+- `costo_pro`: costo ponderado de la línea, vía `dbo.ObtenerCostoPonderadoSalida`/`ObtenerCostoPonderadoEntrada` según si la línea es una salida o entrada.
+- Trae también toda la info de unidades alternativas del artículo (`DetalleUnidadesArticulos`) — probablemente irrelevante para el módulo nuevo salvo que se necesite mostrar cantidades en unidades distintas a la base.
 
-        SET @dCo_fecha_d = dbo.fechasimple(@dCo_fecha_d)
-        SET @dCo_fecha_h = dbo.fechasimple(@dCo_fecha_h)
+Ordena por `co_art, fecha, fe_us_in, tipo, doc_num, reng_num` — es decir, ya viene en orden cronológico por artículo, ideal para alimentar un gráfico de serie de tiempo o un cálculo de saldo corrido.
 
-		Select Art.co_art, ART.art_des, Art.tipo as tipo_art, 
-			case when @dCo_fecha_d is null or Art.tipo = 'S'
-				then 0.00
-                else dbo.ConsultarStockActualxAlmacenxFecha(ART.co_Art,@sCo_Almacen,DATEADD(ss, -1,@dCo_fecha_d),NULL) 
-                end as StockInic, AU.co_uni,
-				CASE WHEN A.total_Salida > 0 
-				THEN [dbo].[ObtenerCostoPonderadoSalida](A.rowguidR,null) 
-				ELSE CASE WHEN A.total_entrada > 0 
-					THEN [dbo].[ObtenerCostoPonderadoEntrada](A.rowguidR,null) 
-					ELSE 0.00000 END
-				END
-				AS costo_pro,
-				A.co_alma, A.tipo ,A.doc_num,A.reng_num,A.co_cliprov,A.fecha,A.total_entrada,A.total_salida,A.anulado
-				,A.rowguidR,
-				U2.co_uniP1,U2.equivalenciaP1,U2.relacionP1, U2.usoDecP1,U2.numDecP1,U2.decripcionP1,
-		    U2.co_uniP1_1 , U2.equivalenciaP1_1 , U2.relacionP1_1 ,U2.usoDecP1_1 , U2.numDecP1_1 , U2.decripcionP1_1 ,
-			 U2.co_uniP1_2  , U2.equivalenciaP1_2 , U2.relacionP1_2 ,U2.usoDecP1_2 , U2.numDecP1_2 , U2.decripcionP1_2 ,
-			 U2.co_uniP1_3  , U2.equivalenciaP1_3 ,  U2.relacionP1_3 , U2.usoDecP1_3 ,U2.numDecP1_3 , U2.decripcionP1_3 ,
-			 U2.co_uniP2  ,  U2.equivalenciaP2 ,  U2.relacionP2 , U2.usoDecP2 , U2.numDecP2 , U2.decripcionP2 ,
-			 U2.co_uniP2_1  , U2.equivalenciaP2_1 ,  U2.relacionP2_1 , U2.usoDecP2_1 , U2.numDecP2_1 , U2.decripcionP2_1 ,
-			 U2.co_uniP2_2  , U2.equivalenciaP2_2 ,  U2.relacionP2_2 , U2.usoDecP2_2 ,
+## Recomendación para el módulo de Inventario nuevo
+Para el gráfico de "evolución de inventario en el tiempo" y el cálculo de "consumo reciente / velocidad de agotamiento", **usar directamente la función `dbo.MovimientoInventario(...)`** (no este SP completo, que trae columnas de unidades alternativas innecesarias) filtrando por artículo, almacén y rango de fecha, y sumando `total_salida` (para consumo) o `(total_entrada - total_salida)` acumulado (para el saldo corrido). Filtrar siempre `anulado=0` en la fuente subyacente — la función ya expone la columna `anulado` por fila para que el consumidor decida, no filtra ella misma.
+
+## Tablas/Objetos Referenciados
+- [`saArticulo`](../tables/saArticulo.md), `saArtUnidad`
+- Función de tabla `dbo.MovimientoInventario` — ver [`MovimientoInventario`](MovimientoInventario.md)
+- Funciones escalares: `dbo.ConsultarStockActualxAlmacenxFecha`, `dbo.ObtenerCostoPonderadoSalida`, `dbo.ObtenerCostoPonderadoEntrada`, `dbo.DetalleUnidadesArticulos`, `dbo.fechasimple`
+
+## Recetario SQL de Negocio
+```sql
+-- Kardex de un artículo en un almacén, últimos 90 días, todos los tipos de movimiento
+EXEC RepMovimientoInventarioxArticulo
+    @sCo_Art_d = '0000063', @sCo_Art_h = '0000063',
+    @dCo_fecha_d = '2026-05-22', @dCo_fecha_h = '2026-08-20',
+    @sCo_Almacen = '14';
+
+-- Equivalente más ligero, consumiendo la función directamente (recomendado para el backend del módulo)
+SELECT co_art, co_alma, tipo, doc_num, fecha, total_entrada, total_salida, anulado
+FROM dbo.MovimientoInventario('0000063','0000063','2026-05-22','2026-08-20','14',NULL,NULL,NULL,NULL,NULL,NULL)
+WHERE anulado = 0
+ORDER BY fecha;
 ```
