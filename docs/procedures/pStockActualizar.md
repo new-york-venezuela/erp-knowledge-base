@@ -35,6 +35,13 @@ CREATE PROCEDURE [pStockActualizar]
 - Este SP debe llamarse **después** de `pInsertarRenglonesAjusteEntradaSalida` (que solo actualiza costeo), como tercer paso del flujo de creación de ajuste — ver [`saAjuste`](../tables/saAjuste.md).
 - Si `RAISERROR` se dispara, la transacción de stock hace `ROLLBACK` internamente, pero el `INSERT` en `saAjuste`/`saAjusteReng` de los pasos previos **no se revierte automáticamente** a menos que la aplicación los envuelva en una transacción externa común — riesgo real de inconsistencia (ajuste registrado, stock no aplicado) si no se maneja con cuidado en el código de la API.
 
+### ⚠️ `XACT_ABORT ON` por sí solo NO basta para revertir una transacción externa — confirmado reproduciendo el fallo
+Si un procedimiento externo envuelve los 3 pasos de creación de ajuste (`pInsertarAjusteEntradaSalida` → `pInsertarRenglonesAjusteEntradaSalida` → `pStockActualizar`) en una transacción propia usando solo `SET XACT_ABORT ON; BEGIN TRAN; ... COMMIT TRAN;`, **una falla de stock negativo dentro de `pStockActualizar` no revierte el `INSERT` del encabezado en `saAjuste`** — reproducido en vivo: forzando una salida que excede el stock disponible con `@bPermiteStockNegativo=0`, el conteo de filas de `saAjuste` subió de 3 a 4 a pesar de que la llamada "falló" y `saStockAlmacen.stock` correctamente no cambió.
+
+**Causa raíz**: este SP abre su transacción vía `SAVE TRANSACTION`/`ROLLBACK TRANSACTION` (un *savepoint*) cuando detecta que ya hay una transacción abierta alrededor (línea "Abre una transacción (o `SAVE TRANSACTION` si ya hay una activa...)" arriba) — el `RAISERROR` + `RETURN` que sigue a ese rollback de savepoint no escala de forma confiable a abortar la transacción *externa* bajo `XACT_ABORT` solo.
+
+**Solución verificada**: el procedimiento externo debe usar `BEGIN TRY`/`BEGIN CATCH` explícito, y en el `CATCH` comprobar `XACT_STATE() <> 0` antes de emitir su propio `ROLLBACK TRAN`, luego re-lanzar el error original vía `RAISERROR`. Reprobado el mismo escenario de stock negativo contra la versión corregida: el conteo de filas de `saAjuste`, `saStockAlmacen.stock`, **y** el contador de `saSerie.prox_n` avanzado por `pConsecutivoProximoOutPut` (si se llamó antes en la misma transacción) revirtieron correctamente en conjunto. Ejemplo completo de este patrón: `pApiCrearAjusteInventario` en `profitplus-exporter/mssql-migrations/0002_pApiCrearAjusteInventario.sql`.
+
 ## Tablas Referenciadas
 - [`saStockAlmacen`](../tables/saStockAlmacen.md) (lectura/escritura)
 - `saArtUnidad` (vía función `dbo.ArtUnidadBase`, lectura)

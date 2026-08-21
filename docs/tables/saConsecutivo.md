@@ -1,6 +1,6 @@
 # Tabla: saConsecutivo
 **Módulo**: Configuración
-**Descripción de Negocio**: _Pendiente de enriquecimiento_
+**Descripción de Negocio**: **No es un contador** — es una tabla de mapeo que, dado un `co_consecutivo` (clave lógica de un tipo de documento, ej. `'AJUS_NUM'` para números de ajuste) y opcionalmente una sucursal (`co_sucur`), resuelve a qué `saSerie` (la fila que sí lleva el contador vivo: `saSerie.prox_n`/`prox_a`) pertenece ese tipo de documento en esa sucursal. No incrementar/leer esta tabla directamente para generar el siguiente número de documento — usar [`pConsecutivoProximoOutPut`](../procedures/pConsecutivoProximoOutPut.md), que resuelve el mapeo y avanza `saSerie` atómicamente en una sola llamada. Verificado en vivo: `co_consecutivo='AJUS_NUM'` en la base `Ncake_a` mapea a `co_serie` con `co_sucur=NULL` — es decir, una sola serie a nivel de toda la empresa, no una por sucursal, para la numeración de ajustes.
 
 ## Campos
 | Campo | Tipo | Nulo | Descripción | Relación |

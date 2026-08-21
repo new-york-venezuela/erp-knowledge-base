@@ -1,6 +1,6 @@
 # Tabla: saSerie
 **Módulo**: Inventario
-**Descripción de Negocio**: _Pendiente de enriquecimiento_
+**Descripción de Negocio**: El contador vivo detrás de cualquier numeración consecutiva del sistema (facturas, órdenes, ajustes, etc.) — `saConsecutivo` sólo mapea a *qué fila* de esta tabla corresponde un tipo de documento; el valor que realmente avanza en cada nuevo documento es `prox_n` (numérico) / `prox_a` (alfanumérico), dentro del rango `desde_n`/`hasta_n` (o `desde_a`/`hasta_a`). Nunca leer/incrementar `prox_n`/`prox_a` a mano — usar [`pConsecutivoProximoOutPut`](../procedures/pConsecutivoProximoOutPut.md), que hace el cálculo (vía `pConsecutivoProximoCalcular`, aplicando `saSerieTipo.prefijo`/`sufijo`/`longitud`) y el `UPDATE` de avance en la misma llamada — esto es lo que hace segura la generación de números bajo escritura concurrente (dos llamadas simultáneas obtienen valores distintos gracias al comportamiento estándar de SQL Server ante escritores concurrentes sobre la misma fila).
 
 ## Campos
 | Campo | Tipo | Nulo | Descripción | Relación |

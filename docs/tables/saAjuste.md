@@ -40,7 +40,7 @@
 
 ## Procedimientos Almacenados Asociados — flujo de creación verificado (código fuente leído en vivo)
 
-`ajue_num` se genera vía el mecanismo genérico de consecutivos (`saConsecutivo`, clave `co_consecutivo='AJUS_NUM'`, serie `I001-1` en esta BD) — **no** vía `pObtenerNroAjuste` (ese SP solo resuelve el número a partir de un `co_invfisico`; solo aplica al flujo de conteo físico, que esta BD tampoco usa: `saInventarioFisico` también tiene 0 filas).
+`ajue_num` se genera vía el mecanismo genérico de consecutivos (`saConsecutivo`, clave `co_consecutivo='AJUS_NUM'`, serie `I001-1` en esta BD) — **no** vía `pObtenerNroAjuste` (ese SP solo resuelve el número a partir de un `co_invfisico`; solo aplica al flujo de conteo físico, que esta BD tampoco usa: `saInventarioFisico` también tiene 0 filas). La llamada correcta, verificada en vivo (deployada y ejecutada repetidamente contra esta BD), es [`pConsecutivoProximoOutPut`](../procedures/pConsecutivoProximoOutPut.md) con `@sCo_Consecutivo='AJUS_NUM'` y `@sCo_Sucur` de la sucursal que crea el ajuste — **no** leer/incrementar `saConsecutivo`/`saSerie` a mano: esa tabla es un mapeo, no un contador (ver [`saConsecutivo`](saConsecutivo.md)), y el SP hace el cálculo + avance de forma atómica, segura bajo concurrencia.
 
 El flujo de creación de un ajuste **NO es una sola llamada atómica** — el cliente ERP orquesta 3 pasos, y ninguno de los dos primeros toca `saStockAlmacen`:
 
