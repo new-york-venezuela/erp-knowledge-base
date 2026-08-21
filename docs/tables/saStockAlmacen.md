@@ -7,7 +7,7 @@
 |---|---|---|---|---|
 | `co_alma` | char | NOT NULL | Código del almacén (PK con co_art) | FK → `saAlmacen.co_alma` |
 | `co_art` | char | NOT NULL | Código del artículo (PK con co_alma) | FK → `saArticulo.co_art` |
-| `tipo` | char | NULL | Tipo de stock: `E`=existencia, `A`=apartado | — |
+| `tipo` | char(4) | NULL | Tipo de stock. **Corrección (verificado en vivo, `SELECT DISTINCT tipo` contra `Ncake_a`): los valores reales son `ACT ` (104 filas) y `LLE ` (1 fila) — no `E`/`A` como decía una versión previa de este doc.** `ACT` = "Actual" (existencia real, la que usa el resto del sistema — ventas, reportes, `pStockActualizar`); `LLE` probablemente "Llegando"/en tránsito, sin uso significativo en esta base. Cualquier query de stock real debe filtrar `tipo = 'ACT'` explícitamente en vez de omitir el filtro — confirmado necesario y usado consistentemente por `pApiCrearAjusteInventario` (ver `procedures/pStockActualizar.md`). | — |
 | `stock` | decimal | NULL | **Cantidad en existencia actual** | — |
 | `revisado` | char | NULL | Flag de sincronización replicación | — |
 | `trasnfe` | char | NULL | Flag de transferencia multiempresa | — |
