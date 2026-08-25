@@ -1,6 +1,8 @@
 # Tabla: saDevolucionCliente
 **Módulo**: Ventas
-**Descripción de Negocio**: _Pendiente de enriquecimiento_
+**Descripción de Negocio**: Encabezado de devoluciones de cliente (notas de crédito por mercancía devuelta). Cada fila es un documento de devolución emitido a favor de un cliente, típicamente referenciando la factura de venta original vía `co_tipo_doc`/`nro_doc` → `saDocumentoVenta`. Alimenta el `saldo` en `saDocumentoVenta` como crédito sin aplicar (ver `saDocumentoVenta.md`) y reduce el "Net Revenue" cuando se descuenta de las ventas brutas. **No verificado en vivo** — descripción derivada del esquema de columnas, FKs explícitas, y por analogía estructural con `saFacturaVenta` (mismo patrón de campos: `total_bruto`/`monto_imp`/`total_neto`/`saldo`/`anulado`).
+
+⚠️ **Gap conocido**: no existe columna de "motivo/razón de devolución" con dominio codificado — sólo `comentario` (texto libre). Un dashboard de "Return Rate & Reasons by reason code" no tiene fuente de datos en este ERP sin agregar un catálogo nuevo (`co_motivo_devolucion`) — ver `saDevolucionClienteReng.md` para el detalle a nivel de renglón, que tampoco tiene motivo.
 
 ## Campos
 | Campo | Tipo | Nulo | Descripción | Relación |
@@ -84,3 +86,33 @@
 - `FK_saDevolucionCliente_saTransporte`: `co_tran` → `saTransporte.co_tran`
 - `FK_saDevolucionCliente_saVendedor`: `co_ven` → `saVendedor.co_ven`
 - `FK_saDevolucionCliente_saCuentaIngEgr`: `co_cta_ingr_egr` → `saCuentaIngEgr.co_cta_ingr_egr`
+
+## Relaciones Clave
+- **Líneas**: `saDevolucionClienteReng` (JOIN por `doc_num`)
+- **Factura afectada**: `saDocumentoVenta` vía `co_tipo_doc`/`nro_doc` (mismo patrón que `saFacturaVenta` — la devolución es un tipo de documento más en el libro de CXC)
+- **Costo de reingreso a inventario**: `saCostoHistoricoSalida` puede tener filas con `tipo_doc='DCLI'` para el reverso de costo cuando la devolución reingresa mercancía a stock (ver `saCostoHistoricoSalida.md`)
+
+## Recetario SQL de Negocio (no verificado en vivo — inferido por analogía con saFacturaVenta)
+```sql
+-- Devoluciones del mes por cliente (en USD, indexado a tasa del documento)
+SELECT co_cli, COUNT(*) AS num_devoluciones,
+       SUM(total_neto) AS total_bs,
+       SUM(total_neto / NULLIF(tasa,0)) AS total_usd
+FROM saDevolucionCliente
+WHERE anulado = 0
+  AND fec_emis BETWEEN '2024-01-01' AND '2024-01-31'
+GROUP BY co_cli
+ORDER BY total_usd DESC;
+
+-- Tasa de devolución: devoluciones vs. ventas brutas del mismo período, por cliente
+SELECT f.co_cli,
+       SUM(f.total_neto) AS ventas_brutas,
+       SUM(d.total_neto) AS devoluciones,
+       SUM(d.total_neto) / NULLIF(SUM(f.total_neto), 0) AS tasa_devolucion
+FROM saFacturaVenta f
+LEFT JOIN saDevolucionCliente d
+    ON d.co_cli = f.co_cli AND d.anulado = 0
+    AND d.fec_emis BETWEEN '2024-01-01' AND '2024-01-31'
+WHERE f.anulado = 0 AND f.fec_emis BETWEEN '2024-01-01' AND '2024-01-31'
+GROUP BY f.co_cli;
+```

@@ -1,6 +1,6 @@
 # Tabla: saLineaArticulo
 **Módulo**: Inventario
-**Descripción de Negocio**: _Pendiente de enriquecimiento_
+**Descripción de Negocio**: Catálogo de líneas de artículo (`co_lin`/`lin_des`) — primer nivel de la jerarquía de clasificación de producto (Línea → Sub-Línea, ver `saSubLinea`). Referenciada por `saArticulo.co_lin`. Además de clasificar, define comisión por defecto para vendedores (`comi_lin` = % comisión por ventas, `comi_lin2` = % comisión por cobros) y retención ISLR/impuesto municipal por defecto (`co_reten`, `co_imun`) heredable por los artículos de la línea. **No verificado en vivo** — descripción derivada del esquema de columnas y FKs explícitas.
 
 ## Campos
 | Campo | Tipo | Nulo | Descripción | Relación |
@@ -41,3 +41,22 @@ _Ninguno_
 
 ## Foreign Keys (explícitas)
 - `FK_saLineaArticulo_saConISLR`: `co_reten` → `saConISLR.co_islr`
+
+## Relaciones Clave
+- **Sub-líneas**: `saSubLinea.co_lin` (jerarquía Línea → Sub-Línea)
+- **Artículos de esta línea**: `saArticulo.co_lin` (FK implícita)
+
+## Recetario SQL de Negocio (no verificado en vivo — inferido del esquema)
+```sql
+-- Ventas netas y comisión de vendedor esperada por línea de artículo
+SELECT l.co_lin, l.lin_des, l.comi_lin AS pct_comision_venta,
+       SUM(r.reng_neto) AS venta_neta,
+       SUM(r.reng_neto) * l.comi_lin / 100.0 AS comision_estimada
+FROM saFacturaVentaReng r
+INNER JOIN saFacturaVenta f  ON f.doc_num = r.doc_num
+INNER JOIN saArticulo a      ON a.co_art  = r.co_art
+INNER JOIN saLineaArticulo l ON l.co_lin  = a.co_lin
+WHERE f.anulado = 0
+GROUP BY l.co_lin, l.lin_des, l.comi_lin
+ORDER BY venta_neta DESC;
+```

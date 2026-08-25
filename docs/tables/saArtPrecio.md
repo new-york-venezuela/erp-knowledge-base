@@ -1,6 +1,8 @@
 # Tabla: saArtPrecio
 **Módulo**: Inventario
-**Descripción de Negocio**: _Pendiente de enriquecimiento_
+**Descripción de Negocio**: Lista de precios vigentes y con vigencia histórica por artículo. Cada fila define el `monto` de un artículo (`co_art`) para un tipo de precio (`co_precio`, FK → `saTipoPrecio` — ej. contado, mayorista, distribuidor), opcionalmente restringido a un almacén específico (`co_alma`; `NULL` = todos los almacenes), con un rango de vigencia `desde`/`hasta`. Es la fuente de verdad de "precio de lista" — distinta del precio efectivo de venta (`saFacturaVentaReng.prec_vta`), que puede diferir por descuentos manuales o comisión aplicada en el momento de la factura. **No verificado en vivo** — descripción derivada del esquema de columnas y FKs explícitas.
+
+**Nota de diseño**: el hecho de que `desde`/`hasta` definan vigencia significa que esta tabla ya funciona como un historial de precios de lista sin necesidad de replicarlo — útil para un dashboard de "Cost Volatility / Price Variance" que compare el precio de lista vigente contra el precio efectivamente facturado en `saFacturaVentaReng.prec_vta` a lo largo del tiempo.
 
 ## Campos
 | Campo | Tipo | Nulo | Descripción | Relación |
@@ -38,3 +40,31 @@ _Ninguno_
 - `FK_saArtPrecio_saAlmacen`: `co_alma` → `saAlmacen.co_alma`
 - `FK_saArtPrecio_saTipoPrecio`: `co_precio` → `saTipoPrecio.co_precio`
 - `FK_saArtPrecio_saArticulo`: `co_art` → `saArticulo.co_art`
+
+## Relaciones Clave
+- **Artículo**: `saArticulo` vía `co_art`
+- **Tipo de precio**: `saTipoPrecio` vía `co_precio` (ej. contado/crédito/mayorista)
+- **Almacén**: `saAlmacen` vía `co_alma` (nullable — precio global si no aplica un almacén específico)
+- **Margen asociado**: `saArtMargen` (mismo par `co_art`/`co_precio`) define el rango de margen mínimo/máximo permitido para este precio (ver SP `pObtenerMargenXTipoPrecio`)
+
+## Recetario SQL de Negocio (no verificado en vivo — inferido del esquema)
+```sql
+-- Precio de lista vigente hoy por artículo y tipo de precio
+SELECT co_art, co_precio, co_alma, monto, co_mone
+FROM saArtPrecio
+WHERE Inactivo = 0
+  AND desde <= GETDATE()
+  AND (hasta IS NULL OR hasta >= GETDATE());
+
+-- Comparar precio de lista vigente vs. precio efectivo facturado (variación de precio)
+SELECT r.co_art, r.doc_num, f.fec_emis,
+       r.prec_vta AS precio_facturado,
+       p.monto    AS precio_lista_vigente,
+       r.prec_vta - p.monto AS variacion
+FROM saFacturaVentaReng r
+INNER JOIN saFacturaVenta f ON f.doc_num = r.doc_num
+LEFT JOIN saArtPrecio p
+    ON p.co_art = r.co_art AND p.co_precio = r.co_precio
+    AND p.Inactivo = 0 AND f.fec_emis BETWEEN p.desde AND ISNULL(p.hasta, '9999-12-31')
+WHERE f.anulado = 0;
+```

@@ -1,6 +1,6 @@
 # Tabla: saSubLinea
 **Módulo**: Inventario
-**Descripción de Negocio**: _Pendiente de enriquecimiento_
+**Descripción de Negocio**: Catálogo de sub-líneas de artículo (`co_subl`/`subl_des`), anidadas bajo una Línea (`co_lin` → `saLineaArticulo`) — segundo nivel de la jerarquía Línea → Sub-Línea. Clave primaria compuesta (`co_lin`, `co_subl`). Referenciada por `saArticulo.co_subl` (junto con `co_lin` para resolver la sub-línea completa, ya que `co_subl` no es único por sí solo — depende de la línea padre). **No verificado en vivo** — descripción derivada del esquema de columnas y FKs explícitas.
 
 ## Campos
 | Campo | Tipo | Nulo | Descripción | Relación |
@@ -37,3 +37,19 @@ _Ninguno_
 ## Foreign Keys (explícitas)
 - `FK_saSubLinea_saConISLR`: `co_reten` → `saConISLR.co_islr`
 - `FK_saSubLinea_saLineaArticulo`: `co_lin` → `saLineaArticulo.co_lin`
+
+## Relaciones Clave
+- **Línea padre**: `saLineaArticulo` vía `co_lin`
+- **Artículos de esta sub-línea**: `saArticulo` vía (`co_lin`, `co_subl`) compuesto — no unir sólo por `co_subl`
+
+## Recetario SQL de Negocio (no verificado en vivo — inferido del esquema)
+```sql
+-- Jerarquía completa Línea > Sub-Línea con conteo de artículos activos
+SELECT l.co_lin, l.lin_des, s.co_subl, s.subl_des,
+       COUNT(a.co_art) AS num_articulos
+FROM saLineaArticulo l
+INNER JOIN saSubLinea s ON s.co_lin = l.co_lin
+LEFT JOIN saArticulo a  ON a.co_lin = s.co_lin AND a.co_subl = s.co_subl AND a.anulado = 0
+GROUP BY l.co_lin, l.lin_des, s.co_subl, s.subl_des
+ORDER BY l.co_lin, s.co_subl;
+```

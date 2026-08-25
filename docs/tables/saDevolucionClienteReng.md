@@ -1,6 +1,8 @@
 # Tabla: saDevolucionClienteReng
 **Módulo**: Ventas
-**Descripción de Negocio**: _Pendiente de enriquecimiento_
+**Descripción de Negocio**: Renglones (líneas de detalle) de devoluciones de cliente. Cada fila es un artículo devuelto dentro de un documento de `saDevolucionCliente`, con su cantidad, precio y prorrateo de impuestos/descuentos — mismo patrón estructural que `saFacturaVentaReng`. Se une a `saDevolucionCliente` por `doc_num`. **No verificado en vivo** — descripción derivada del esquema de columnas y por analogía estructural con `saFacturaVentaReng`.
+
+⚠️ **Sin motivo de devolución a nivel de renglón tampoco**: igual que en el encabezado (`saDevolucionCliente.md`), no hay columna de razón/motivo codificada; sólo `comentario` (texto libre, opcional). `tipo_doc`/`num_doc`/`rowguid_doc` permiten rastrear el documento de origen que se está devolviendo (normalmente `FACT`), pero no el porqué.
 
 ## Campos
 | Campo | Tipo | Nulo | Descripción | Relación |
@@ -68,3 +70,24 @@ _Ninguno_
 - `FK_saDevolucionClienteReng_saArtUnidadSecundaria`: `co_art` → `saArtUnidad.co_art`
 - `FK_saDevolucionClienteReng_saArtUnidadSecundaria`: `sco_uni` → `saArtUnidad.co_uni`
 - `FK_saDevolucionClienteReng_saDevolucionCliente`: `doc_num` → `saDevolucionCliente.doc_num`
+
+## Relaciones Clave
+- **Encabezado**: `saDevolucionCliente` (JOIN por `doc_num`)
+- **Renglón de factura original devuelto**: `num_doc`/`rowguid_doc` → apunta al renglón de origen (normalmente `saFacturaVentaReng`, cuando `tipo_doc='FACT'`)
+- **Artículo**: `saArticulo` vía `co_art` (nota: la FK explícita apunta a `saArtUnidad`, tabla intermedia de unidades por artículo — para el catálogo maestro usar `saArticulo.co_art`)
+
+## Recetario SQL de Negocio (no verificado en vivo — inferido por analogía con saFacturaVentaReng)
+```sql
+-- Artículos más devueltos del mes (en unidades y Bs)
+SELECT
+    r.co_art, a.art_des,
+    SUM(r.total_art)  AS cant_devuelta,
+    SUM(r.reng_neto)  AS monto_bs
+FROM saDevolucionClienteReng r
+INNER JOIN saDevolucionCliente d ON r.doc_num = d.doc_num
+LEFT JOIN  saArticulo a          ON r.co_art  = a.co_art
+WHERE d.fec_emis BETWEEN '2024-01-01' AND '2024-01-31'
+  AND d.anulado = 0
+GROUP BY r.co_art, a.art_des
+ORDER BY monto_bs DESC;
+```

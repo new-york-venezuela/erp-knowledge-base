@@ -1,6 +1,6 @@
 # Tabla: saCatArticulo
 **Módulo**: Inventario
-**Descripción de Negocio**: _Pendiente de enriquecimiento_
+**Descripción de Negocio**: Catálogo de categorías de artículo (`co_cat`/`cat_des`). Es el tercer nivel de clasificación jerárquica de producto en Profit Plus, junto a Línea (`saLineaArticulo`) y Sub-Línea (`saSubLinea`) — a diferencia de éstas, la Categoría (`saArticulo.co_cat`) no está anidada bajo Línea/Sub-Línea; es un eje de clasificación independiente y paralelo. Referenciada por `saArticulo.co_cat`. Usada para reportería de ventas/margen por categoría y para asignar el concepto de retención ISLR (`co_reten`) e impuesto municipal (`co_imun`) por defecto a nivel de categoría. **No verificado en vivo** — descripción derivada del esquema de columnas y por analogía con `saLineaArticulo`/`saSubLinea` (mismo patrón de campos).
 
 ## Campos
 | Campo | Tipo | Nulo | Descripción | Relación |
@@ -37,3 +37,21 @@ _Ninguno_
 
 ## Foreign Keys (explícitas)
 - `FK_saCatArticulo_saConISLR`: `co_reten` → `saConISLR.co_islr`
+
+## Relaciones Clave
+- **Artículos de esta categoría**: `saArticulo.co_cat` (FK implícita, no declarada como FK explícita en el esquema)
+
+## Recetario SQL de Negocio (no verificado en vivo — inferido del esquema)
+```sql
+-- Margen bruto por categoría de artículo (requiere costo — ver saCostoHistoricoSalida.md)
+SELECT c.co_cat, c.cat_des,
+       SUM(r.reng_neto) AS venta_neta,
+       COUNT(DISTINCT r.doc_num) AS num_facturas
+FROM saFacturaVentaReng r
+INNER JOIN saFacturaVenta f ON f.doc_num = r.doc_num
+INNER JOIN saArticulo a     ON a.co_art  = r.co_art
+INNER JOIN saCatArticulo c  ON c.co_cat  = a.co_cat
+WHERE f.anulado = 0
+GROUP BY c.co_cat, c.cat_des
+ORDER BY venta_neta DESC;
+```
