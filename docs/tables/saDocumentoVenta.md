@@ -2,6 +2,8 @@
 **Módulo**: Ventas / Cuentas por Cobrar
 **Descripción de Negocio**: Libro mayor de documentos de venta (cuentas por cobrar). Registra TODOS los documentos que afectan el saldo de un cliente: facturas (`FACT`), notas de crédito (`N/CR`, `NCR`), notas de débito (`N/DB`), anticipos y recibos de cobro. Es la fuente de verdad para saldo pendiente por cliente. No reemplaza a `saFacturaVenta`; la complementa con la visión de CXC.
 
+**`N/DB` (nota de débito) = deuda del cliente hacia nosotros**, igual que `FACT` — se emite, entre otros motivos, por ajuste de diferencial cambiario. A diferencia de `N/CR`, un `N/DB` con `saldo>0` SÍ debe sumarse a la deuda del cliente en reportes de cobranza/CXC (no es un crédito sin aplicar).
+
 ## Campos Clave
 | Campo | Tipo | Nulo | Descripción de Negocio | Relación |
 |---|---|---|---|---|
@@ -19,7 +21,7 @@
 | `anulado` | bit | NULL | `1` = documento anulado; ignorar en reportes | — |
 | `aut` | bit | NULL | `1` = documento autorizado para cobro | — |
 | `doc_orig` | char | NULL | Documento original al que aplica (para N/CR que afecta una factura) | — |
-| `tipo_origen` | int | NULL | Tipo del documento de origen | — |
+| `tipo_origen` | int | NULL | Motivo/origen del documento. Valor confirmado: `2` = "Dif. cambiario" (diferencial cambiario), visto en `N/CR` vía `pConsultaNotaCreditoDxPP` (`CASE WHEN tipo_origen = 2 THEN 'Dif. cambiario' ELSE 'Desct pronto pago' END`). Sin confirmar aún si `N/DB` usa el mismo valor `2` para diferencial cambiario — no se encontraron filas `N/DB` en la BD de prueba para verificar | — |
 | `nro_orig` | varchar | NULL | Número del documento de origen (ej: factura afectada por la nota de crédito) | — |
 | `monto_imp` | decimal | NULL | Monto IVA del documento | — |
 | `n_control` | varchar | NULL | Número de control fiscal (SENIAT) | — |
